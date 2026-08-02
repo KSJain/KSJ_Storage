@@ -1,26 +1,28 @@
 # KSJ_Storage
 
-Reusable persistence for ESP32 projects.
+Reusable persistence for Arduino-compatible embedded systems.
 
-KSJ_Storage provides a small, understandable interface for mounting SD cards and reading or writing text files.
+> **Storage is an observer.**
 
-Applications should think in terms of persistence—not filesystem driver details.
+Its responsibility is to preserve engineering observations.
 
-> Learn to walk before leap.
+It never controls the application.
+
+It never becomes required for the application to remain safe.
+
+If storage fails, the system continues operating.
 
 ---
 
-## Features
+## Philosophy
 
-- SD-card mounting
-- Card detection
-- Card type reporting
-- Capacity and usage information
-- Text file writing
-- Text file appending
-- Text file reading
-- Structured failure reporting
-- Hardware-independent text-storage interface
+> Observation before optimization.
+
+> Every observation should be useful more than once.
+
+KSJ_Storage exists to turn temporary device observations into durable engineering evidence.
+
+Applications should think in terms of persistence and records—not filesystem-driver details.
 
 ---
 
@@ -28,75 +30,49 @@ Applications should think in terms of persistence—not filesystem driver detail
 
 **v0.1.0**
 
----
-
-## Supported Storage
-
-| Storage Type | Status |
-|---|---|
-| ESP32 SD over SPI | Supported |
-| LittleFS | Planned |
-| SPIFFS | Planned |
-| External flash | Future |
+Development toward **v0.2.0** is in progress.
 
 ---
 
-## Wiring
+## Existing Features
 
-Default example wiring for ESP32 DOIT DevKit V1:
+- SD-card mounting
+- Card detection
+- Card-type reporting
+- Capacity and usage information
+- Text-file writing
+- Text-file appending
+- Text-file reading
+- Structured failure reporting
+- Hardware-independent text-storage interface
 
-| SD Module | ESP32 |
-|---|---:|
-| CS | GPIO 5 |
-| SCK | GPIO 18 |
-| MISO | GPIO 19 |
-| MOSI | GPIO 23 |
-| GND | GND |
-
-Confirm whether the module requires 3.3 V or 5 V input before connecting power.
-
-ESP32 signal logic is 3.3 V.
+The existing `v0.1.0` API remains supported.
 
 ---
 
-## Quick Start
+## Session Logging
 
-```cpp
-SPIClass sdSpi(VSPI);
+The upcoming `v0.2.0` architecture introduces append-only session logs.
 
-KSJ::SDStorage storage(
-    sdSpi,
-    5
-);
+Each boot or experiment can create an independent session containing:
 
-void setup()
-{
-    sdSpi.begin(
-        18,
-        19,
-        23,
-        5
-    );
+- Human-readable session identity
+- Persistent boot count
+- Firmware version
+- Board identity
+- Zero-based uptime
+- Monotonic record sequence
+- Telemetry records
+- Event records
+- Session lifecycle records
 
-    if (!storage.begin())
-    {
-        return;
-    }
+Example JSON Lines:
 
-    storage.writeText(
-        "/hello.txt",
-        "Hello from RAMU\n"
-    );
+```json
+{"session":"PB1-23","seq":0,"uptime_ms":0,"type":"session_start","data":{"boot_count":23,"firmware":"0.7.0","board":"Prototype Box v1"}}
+{"session":"PB1-23","seq":1,"uptime_ms":5000,"type":"telemetry","data":{"ldr_raw":2610,"stable":true}}
+{"session":"PB1-23","seq":2,"uptime_ms":7800,"type":"event","event":"LIGHT_CHANGED","data":{"from":"BRIGHT","to":"DIM"}}
 
-    storage.appendText(
-        "/hello.txt",
-        "Persistent memory works.\n"
-    );
+## Development
 
-    String contents;
-
-    storage.readText(
-        "/hello.txt",
-        contents
-    );
-}
+See [`docs/DEVELOPING_KSJ_LIBRARIES.md`](docs/DEVELOPING_KSJ_LIBRARIES.md) for the local-example and released-library workflow.
