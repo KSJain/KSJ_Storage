@@ -11,9 +11,7 @@ namespace KSJ
 struct FileEntry
 {
     String path;
-
     uint64_t sizeBytes = 0;
-
     bool isDirectory = false;
 };
 
@@ -46,6 +44,10 @@ public:
     virtual StorageResult readLastByte(
         const char* path,
         char& value
+    ) = 0;
+
+    virtual StorageResult remove(
+        const char* path
     ) = 0;
 };
 

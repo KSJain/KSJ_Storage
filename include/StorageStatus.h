@@ -13,7 +13,9 @@ enum class StorageStatus : uint8_t
     CardNotFound,
     OpenFailed,
     WriteFailed,
-    ReadFailed
+    ReadFailed,
+    RemoveFailed,
+    CapacityReached
 };
 
 }

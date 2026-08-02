@@ -68,6 +68,10 @@ public:
         char& value
     ) override;
 
+    StorageResult remove(
+        const char* path
+    ) override;
+
     uint8_t chipSelectPin() const;
 
     uint32_t frequencyHz() const;

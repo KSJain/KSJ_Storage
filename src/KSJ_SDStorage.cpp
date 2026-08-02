@@ -20,14 +20,13 @@ StorageResult SDStorage::begin()
 {
     _ready = false;
 
-    const bool mounted =
-        SD.begin(
+    if (
+        !SD.begin(
             _chipSelectPin,
             _spi,
             _frequencyHz
-        );
-
-    if (!mounted)
+        )
+    )
     {
         return makeResult(
             false,
@@ -274,15 +273,10 @@ bool SDStorage::exists(
     const char* path
 ) const
 {
-    if (
-        !_ready ||
-        !validatePath(path)
-    )
-    {
-        return false;
-    }
-
-    return SD.exists(path);
+    return
+        _ready &&
+        validatePath(path) &&
+        SD.exists(path);
 }
 
 StorageResult SDStorage::visitDirectory(
@@ -340,23 +334,17 @@ StorageResult SDStorage::visitDirectory(
     {
         FileEntry fileEntry;
 
-        const char* entryName =
+        fileEntry.path =
             entry.name();
 
-        if (entryName != nullptr)
+        if (
+            fileEntry.path.length() > 0 &&
+            fileEntry.path[0] != '/'
+        )
         {
             fileEntry.path =
-                entryName;
-
-            if (
-                fileEntry.path.length() > 0 &&
-                fileEntry.path[0] != '/'
-            )
-            {
-                fileEntry.path =
-                    "/" +
-                    fileEntry.path;
-            }
+                "/" +
+                fileEntry.path;
         }
 
         fileEntry.sizeBytes =
@@ -419,21 +407,19 @@ StorageResult SDStorage::fileSize(
             FILE_READ
         );
 
-    if (!file)
+    if (
+        !file ||
+        file.isDirectory()
+    )
     {
+        if (file)
+        {
+            file.close();
+        }
+
         return makeResult(
             false,
             StorageStatus::OpenFailed
-        );
-    }
-
-    if (file.isDirectory())
-    {
-        file.close();
-
-        return makeResult(
-            false,
-            StorageStatus::ReadFailed
         );
     }
 
@@ -455,15 +441,18 @@ StorageResult SDStorage::readLastByte(
 {
     value = '\0';
 
-    if (!_ready)
-    {
-        return makeResult(
-            false,
-            StorageStatus::NotInitialized
-        );
-    }
+    uint64_t sizeBytes = 0;
 
-    if (!validatePath(path))
+    const StorageResult sizeResult =
+        fileSize(
+            path,
+            sizeBytes
+        );
+
+    if (
+        !sizeResult ||
+        sizeBytes == 0
+    )
     {
         return makeResult(
             false,
@@ -486,28 +475,11 @@ StorageResult SDStorage::readLastByte(
     }
 
     if (
-        file.isDirectory() ||
-        file.size() == 0
-    )
-    {
-        file.close();
-
-        return makeResult(
-            false,
-            StorageStatus::ReadFailed
-        );
-    }
-
-    const size_t finalPosition =
-        file.size() - 1;
-
-    const bool seekSucceeded =
-        file.seek(
-            finalPosition,
+        !file.seek(
+            sizeBytes - 1,
             SeekSet
-        );
-
-    if (!seekSucceeded)
+        )
+    )
     {
         file.close();
 
@@ -541,6 +513,48 @@ StorageResult SDStorage::readLastByte(
     );
 }
 
+StorageResult SDStorage::remove(
+    const char* path
+)
+{
+    if (!_ready)
+    {
+        return makeResult(
+            false,
+            StorageStatus::NotInitialized
+        );
+    }
+
+    if (!validatePath(path))
+    {
+        return makeResult(
+            false,
+            StorageStatus::RemoveFailed
+        );
+    }
+
+    if (!SD.exists(path))
+    {
+        return makeResult(
+            true,
+            StorageStatus::Ready
+        );
+    }
+
+    if (!SD.remove(path))
+    {
+        return makeResult(
+            false,
+            StorageStatus::RemoveFailed
+        );
+    }
+
+    return makeResult(
+        true,
+        StorageStatus::Ready
+    );
+}
+
 uint8_t SDStorage::chipSelectPin() const
 {
     return _chipSelectPin;
@@ -560,11 +574,8 @@ StorageResult SDStorage::makeResult(
 
     StorageResult result;
 
-    result.success =
-        success;
-
-    result.status =
-        status;
+    result.success = success;
+    result.status = status;
 
     return result;
 }

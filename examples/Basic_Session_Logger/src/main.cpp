@@ -2,25 +2,21 @@
 #include <SPI.h>
 
 #include "KSJ_SDStorage.h"
+#include "RetentionPolicy.h"
 #include "SessionInfo.h"
 #include "SessionInspection.h"
 #include "SessionInspector.h"
 #include "SessionLogger.h"
+#include "SessionRetention.h"
 #include "SessionSequence.h"
+#include "StorageHealth.h"
 
 namespace Pins
 {
-    constexpr uint8_t SD_CS =
-        5;
-
-    constexpr uint8_t SD_SCK =
-        18;
-
-    constexpr uint8_t SD_MISO =
-        19;
-
-    constexpr uint8_t SD_MOSI =
-        23;
+    constexpr uint8_t SD_CS = 5;
+    constexpr uint8_t SD_SCK = 18;
+    constexpr uint8_t SD_MISO = 19;
+    constexpr uint8_t SD_MOSI = 23;
 }
 
 namespace Example
@@ -60,11 +56,12 @@ KSJ::SessionInspector sessionInspector(
     storage
 );
 
-uint32_t previousTelemetryMs =
-    0;
+KSJ::SessionRetention sessionRetention(
+    storage
+);
 
-uint32_t simulatedReading =
-    100;
+uint32_t previousTelemetryMs = 0;
+uint32_t simulatedReading = 100;
 
 String formatSessionNumber(
     uint32_t number
@@ -134,32 +131,18 @@ void printInspection(
         "---------------------------"
     );
 
-    Serial.print(
-        "Path:   "
-    );
+    Serial.print("Path:   ");
+    Serial.println(inspection.path);
 
-    Serial.println(
-        inspection.path
-    );
-
-    Serial.print(
-        "Size:   "
-    );
-
+    Serial.print("Size:   ");
     Serial.print(
         static_cast<unsigned long>(
             inspection.sizeBytes
         )
     );
+    Serial.println(" bytes");
 
-    Serial.println(
-        " bytes"
-    );
-
-    Serial.print(
-        "Status: "
-    );
-
+    Serial.print("Status: ");
     Serial.println(
         KSJ::sessionInspectionStatusName(
             inspection.status
@@ -169,7 +152,66 @@ void printInspection(
     Serial.println(
         "---------------------------"
     );
+    Serial.println();
+}
 
+void printHealth(
+    const KSJ::StorageHealth& health
+)
+{
+    Serial.println();
+    Serial.println(
+        "Storage health"
+    );
+
+    Serial.println(
+        "---------------------------"
+    );
+
+    Serial.print("State:      ");
+    Serial.println(
+        KSJ::storageHealthStateName(
+            health.state
+        )
+    );
+
+    Serial.print("Sessions:   ");
+    Serial.println(
+        health.sessionCount
+    );
+
+    Serial.print("Complete:   ");
+    Serial.println(
+        health.completeSessionCount
+    );
+
+    Serial.print("Incomplete: ");
+    Serial.println(
+        health.incompleteSessionCount
+    );
+
+    Serial.print("Deleted:    ");
+    Serial.println(
+        health.deletedSessionCount
+    );
+
+    Serial.print("Log bytes:  ");
+    Serial.println(
+        static_cast<unsigned long>(
+            health.totalLogBytes
+        )
+    );
+
+    Serial.print("Largest:    ");
+    Serial.println(
+        static_cast<unsigned long>(
+            health.largestSessionBytes
+        )
+    );
+
+    Serial.println(
+        "---------------------------"
+    );
     Serial.println();
 }
 
@@ -180,9 +222,7 @@ String buildInspectionPayload(
 {
     String payload;
 
-    payload.reserve(
-        192
-    );
+    payload.reserve(192);
 
     payload +=
         "{\"previous_session\":\"";
@@ -210,6 +250,57 @@ String buildInspectionPayload(
 
     payload +=
         "}";
+
+    return payload;
+}
+
+String buildHealthPayload(
+    const KSJ::StorageHealth& health
+)
+{
+    String payload;
+
+    payload.reserve(224);
+
+    payload += "{\"state\":\"";
+    payload +=
+        KSJ::storageHealthStateName(
+            health.state
+        );
+
+    payload += "\",\"sessions\":";
+    payload +=
+        String(
+            health.sessionCount
+        );
+
+    payload += ",\"complete\":";
+    payload +=
+        String(
+            health.completeSessionCount
+        );
+
+    payload += ",\"incomplete\":";
+    payload +=
+        String(
+            health.incompleteSessionCount
+        );
+
+    payload += ",\"deleted\":";
+    payload +=
+        String(
+            health.deletedSessionCount
+        );
+
+    payload += ",\"total_bytes\":";
+    payload +=
+        String(
+            static_cast<unsigned long>(
+                health.totalLogBytes
+            )
+        );
+
+    payload += "}";
 
     return payload;
 }
@@ -252,16 +343,10 @@ void testInvalidPayload()
 
 void setup()
 {
-    Serial.begin(
-        115200
-    );
-
-    delay(
-        400
-    );
+    Serial.begin(115200);
+    delay(400);
 
     Serial.println();
-
     Serial.println(
         "KSJ Storage Session Logger"
     );
@@ -291,8 +376,43 @@ void setup()
         return;
     }
 
-    uint32_t sessionNumber = 0;
+    KSJ::RetentionPolicy policy;
 
+    policy.maximumSessions = 5;
+
+    policy.maximumSessionBytes =
+        2ULL * 1024ULL * 1024ULL;
+
+    policy.maximumTotalBytes =
+        100ULL * 1024ULL * 1024ULL;
+
+    KSJ::StorageHealth health;
+
+    const KSJ::StorageResult
+        retentionResult =
+            sessionRetention.apply(
+                Example::SESSION_PREFIX,
+                policy,
+                health
+            );
+
+    printResult(
+        "Retention",
+        retentionResult
+    );
+
+    printHealth(
+        health
+    );
+
+    if (!retentionResult)
+    {
+        Serial.println(
+            "Application continues without retention."
+        );
+    }
+
+    uint32_t sessionNumber = 0;
     String sessionId;
 
     const KSJ::StorageResult
@@ -319,7 +439,7 @@ void setup()
     String previousSessionId;
     String previousSessionPath;
 
-    bool previousSessionExists =
+    const bool previousSessionExists =
         sessionNumber > 1;
 
     if (previousSessionExists)
@@ -384,26 +504,13 @@ void setup()
         return;
     }
 
-    Serial.print(
-        "Session number: "
-    );
+    Serial.print("Session number: ");
+    Serial.println(sessionNumber);
 
-    Serial.println(
-        sessionNumber
-    );
+    Serial.print("Session ID: ");
+    Serial.println(sessionId);
 
-    Serial.print(
-        "Session ID: "
-    );
-
-    Serial.println(
-        sessionId
-    );
-
-    Serial.print(
-        "Session file: "
-    );
-
+    Serial.print("Session file: ");
     Serial.println(
         logger.sessionPath()
     );
@@ -428,6 +535,17 @@ void setup()
             payload.c_str()
         );
     }
+
+    const String healthPayload =
+        buildHealthPayload(
+            health
+        );
+
+    logger.logEvent(
+        millis(),
+        "STORAGE_HEALTH",
+        healthPayload.c_str()
+    );
 
     testInvalidPayload();
 }
@@ -455,14 +573,11 @@ void loop()
     previousTelemetryMs =
         nowMs;
 
-    simulatedReading +=
-        7;
+    simulatedReading += 7;
 
     String payload;
 
-    payload.reserve(
-        96
-    );
+    payload.reserve(96);
 
     payload +=
         "{\"simulated_raw\":";
@@ -481,9 +596,7 @@ void loop()
             payload.c_str()
         );
 
-    Serial.print(
-        "Telemetry "
-    );
+    Serial.print("Telemetry ");
 
     Serial.print(
         result
@@ -491,9 +604,7 @@ void loop()
             : logger.sequence()
     );
 
-    Serial.print(
-        ": "
-    );
+    Serial.print(": ");
 
     Serial.println(
         result
