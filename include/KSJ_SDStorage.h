@@ -58,6 +58,16 @@ public:
         void* context = nullptr
     ) override;
 
+    StorageResult fileSize(
+        const char* path,
+        uint64_t& sizeBytes
+    ) override;
+
+    StorageResult readLastByte(
+        const char* path,
+        char& value
+    ) override;
+
     uint8_t chipSelectPin() const;
 
     uint32_t frequencyHz() const;

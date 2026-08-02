@@ -37,6 +37,16 @@ public:
         FileEntryVisitor visitor,
         void* context = nullptr
     ) = 0;
+
+    virtual StorageResult fileSize(
+        const char* path,
+        uint64_t& sizeBytes
+    ) = 0;
+
+    virtual StorageResult readLastByte(
+        const char* path,
+        char& value
+    ) = 0;
 };
 
 }

@@ -78,6 +78,8 @@ private:
         StorageStatus status
     );
 
+    void advanceSequence();
+
     ITextStorage& _storage;
 
     SessionInfo _session;

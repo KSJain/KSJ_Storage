@@ -3,6 +3,8 @@
 
 #include "KSJ_SDStorage.h"
 #include "SessionInfo.h"
+#include "SessionInspection.h"
+#include "SessionInspector.h"
 #include "SessionLogger.h"
 #include "SessionSequence.h"
 
@@ -50,16 +52,59 @@ KSJ::SessionLogger logger(
     storage
 );
 
-KSJ::SessionSequence
-    sessionSequence(
-        storage
-    );
+KSJ::SessionSequence sessionSequence(
+    storage
+);
+
+KSJ::SessionInspector sessionInspector(
+    storage
+);
 
 uint32_t previousTelemetryMs =
     0;
 
 uint32_t simulatedReading =
     100;
+
+String formatSessionNumber(
+    uint32_t number
+)
+{
+    String formatted =
+        String(number);
+
+    while (formatted.length() < 6)
+    {
+        formatted =
+            "0" +
+            formatted;
+    }
+
+    return formatted;
+}
+
+String makeSessionId(
+    uint32_t number
+)
+{
+    return
+        String(
+            Example::SESSION_PREFIX
+        ) +
+        formatSessionNumber(
+            number
+        );
+}
+
+String makeSessionPath(
+    const String& sessionId
+)
+{
+    return
+        "/session_" +
+        sessionId +
+        ".jsonl";
+}
 
 void printResult(
     const char* operation,
@@ -73,6 +118,135 @@ void printResult(
         result
             ? "SUCCESS"
             : "FAILED"
+    );
+}
+
+void printInspection(
+    const KSJ::SessionInspection& inspection
+)
+{
+    Serial.println();
+    Serial.println(
+        "Previous session inspection"
+    );
+
+    Serial.println(
+        "---------------------------"
+    );
+
+    Serial.print(
+        "Path:   "
+    );
+
+    Serial.println(
+        inspection.path
+    );
+
+    Serial.print(
+        "Size:   "
+    );
+
+    Serial.print(
+        static_cast<unsigned long>(
+            inspection.sizeBytes
+        )
+    );
+
+    Serial.println(
+        " bytes"
+    );
+
+    Serial.print(
+        "Status: "
+    );
+
+    Serial.println(
+        KSJ::sessionInspectionStatusName(
+            inspection.status
+        )
+    );
+
+    Serial.println(
+        "---------------------------"
+    );
+
+    Serial.println();
+}
+
+String buildInspectionPayload(
+    const String& previousSessionId,
+    const KSJ::SessionInspection& inspection
+)
+{
+    String payload;
+
+    payload.reserve(
+        192
+    );
+
+    payload +=
+        "{\"previous_session\":\"";
+
+    payload +=
+        previousSessionId;
+
+    payload +=
+        "\",\"result\":\"";
+
+    payload +=
+        KSJ::sessionInspectionStatusName(
+            inspection.status
+        );
+
+    payload +=
+        "\",\"size_bytes\":";
+
+    payload +=
+        String(
+            static_cast<unsigned long>(
+                inspection.sizeBytes
+            )
+        );
+
+    payload +=
+        "}";
+
+    return payload;
+}
+
+void testInvalidPayload()
+{
+    const uint32_t beforeSequence =
+        logger.sequence();
+
+    const KSJ::StorageResult result =
+        logger.logTelemetry(
+            millis(),
+            "{\n\"invalid\":true\n}"
+        );
+
+    const uint32_t afterSequence =
+        logger.sequence();
+
+    Serial.print(
+        "Invalid payload rejected: "
+    );
+
+    Serial.println(
+        !result
+            ? "YES"
+            : "NO"
+    );
+
+    Serial.print(
+        "Sequence preserved: "
+    );
+
+    Serial.println(
+        beforeSequence ==
+                afterSequence
+            ? "YES"
+            : "NO"
     );
 }
 
@@ -139,6 +313,44 @@ void setup()
         return;
     }
 
+    KSJ::SessionInspection
+        previousInspection;
+
+    String previousSessionId;
+    String previousSessionPath;
+
+    bool previousSessionExists =
+        sessionNumber > 1;
+
+    if (previousSessionExists)
+    {
+        previousSessionId =
+            makeSessionId(
+                sessionNumber - 1
+            );
+
+        previousSessionPath =
+            makeSessionPath(
+                previousSessionId
+            );
+
+        const KSJ::StorageResult
+            inspectionResult =
+                sessionInspector.inspect(
+                    previousSessionPath.c_str(),
+                    previousInspection
+                );
+
+        printResult(
+            "Previous inspection",
+            inspectionResult
+        );
+
+        printInspection(
+            previousInspection
+        );
+    }
+
     KSJ::SessionInfo session;
 
     session.sessionId =
@@ -201,6 +413,23 @@ void setup()
         "EXAMPLE_READY",
         "{\"message\":\"Session logging works\"}"
     );
+
+    if (previousSessionExists)
+    {
+        const String payload =
+            buildInspectionPayload(
+                previousSessionId,
+                previousInspection
+            );
+
+        logger.logEvent(
+            millis(),
+            "PREVIOUS_SESSION_INSPECTED",
+            payload.c_str()
+        );
+    }
+
+    testInvalidPayload();
 }
 
 void loop()
@@ -257,7 +486,9 @@ void loop()
     );
 
     Serial.print(
-        logger.sequence() - 1
+        result
+            ? logger.sequence() - 1
+            : logger.sequence()
     );
 
     Serial.print(

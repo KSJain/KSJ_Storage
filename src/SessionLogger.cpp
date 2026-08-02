@@ -44,13 +44,6 @@ StorageResult SessionLogger::begin(
 
     _session = session;
 
-    /*
-     * Session files remain in the card root for
-     * this first architectural increment.
-     *
-     * Directory management and retention arrive
-     * in a later commit.
-     */
     _sessionPath =
         "/session_" +
         session.sessionId +
@@ -62,7 +55,7 @@ StorageResult SessionLogger::begin(
         SessionRecordType::SessionStart;
 
     startRecord.sequence =
-        _nextSequence++;
+        _nextSequence;
 
     startRecord.uptimeMs =
         session.startedAtMs;
@@ -80,6 +73,8 @@ StorageResult SessionLogger::begin(
     {
         return result;
     }
+
+    advanceSequence();
 
     _ready = true;
     _sessionActive = true;
@@ -120,7 +115,7 @@ StorageResult SessionLogger::logTelemetry(
         SessionRecordType::Telemetry;
 
     record.sequence =
-        _nextSequence++;
+        _nextSequence;
 
     record.uptimeMs =
         uptimeMs;
@@ -128,10 +123,18 @@ StorageResult SessionLogger::logTelemetry(
     record.payloadJson =
         payloadJson;
 
-    return appendRecord(
-        record,
-        false
-    );
+    const StorageResult result =
+        appendRecord(
+            record,
+            false
+        );
+
+    if (result)
+    {
+        advanceSequence();
+    }
+
+    return result;
 }
 
 StorageResult SessionLogger::logEvent(
@@ -179,7 +182,7 @@ StorageResult SessionLogger::logEvent(
         SessionRecordType::Event;
 
     record.sequence =
-        _nextSequence++;
+        _nextSequence;
 
     record.uptimeMs =
         uptimeMs;
@@ -192,26 +195,24 @@ StorageResult SessionLogger::logEvent(
             ? payloadJson
             : "{}";
 
-    return appendRecord(
-        record,
-        false
-    );
+    const StorageResult result =
+        appendRecord(
+            record,
+            false
+        );
+
+    if (result)
+    {
+        advanceSequence();
+    }
+
+    return result;
 }
 
 void SessionLogger::update(
     uint32_t nowMs
 )
 {
-    /*
-     * Intentionally empty in the first commit.
-     *
-     * The method exists so every application can
-     * already use the normal KSJ begin/update
-     * lifecycle.
-     *
-     * Periodic flush and maintenance behavior can
-     * be introduced without changing this API.
-     */
     (void)nowMs;
 }
 
@@ -236,7 +237,7 @@ StorageResult SessionLogger::endSession(
         SessionRecordType::SessionEnd;
 
     record.sequence =
-        _nextSequence++;
+        _nextSequence;
 
     record.uptimeMs =
         uptimeMs;
@@ -252,6 +253,7 @@ StorageResult SessionLogger::endSession(
 
     if (result)
     {
+        advanceSequence();
         _sessionActive = false;
     }
 
@@ -328,83 +330,34 @@ String SessionLogger::buildRecordJson(
 {
     String json;
 
-    /*
-     * Reserve a little space to reduce repeated
-     * heap reallocations on the ESP32.
-     */
     json.reserve(
         256 +
         record.payloadJson.length()
     );
 
-    json +=
-        "{\"session\":\"";
-
-    json +=
-        escapeJsonString(
-            _session.sessionId
-        );
-
-    json +=
-        "\",\"seq\":";
-
-    json +=
-        String(record.sequence);
-
-    json +=
-        ",\"uptime_ms\":";
-
-    json +=
-        String(record.uptimeMs);
-
-    json +=
-        ",\"type\":\"";
-
-    json +=
-        sessionRecordTypeName(
-            record.type
-        );
-
-    json +=
-        "\"";
+    json += "{\"session\":\"";
+    json += escapeJsonString(_session.sessionId);
+    json += "\",\"seq\":";
+    json += String(record.sequence);
+    json += ",\"uptime_ms\":";
+    json += String(record.uptimeMs);
+    json += ",\"type\":\"";
+    json += sessionRecordTypeName(record.type);
+    json += "\"";
 
     if (
         record.type ==
         SessionRecordType::Event
     )
     {
-        json +=
-            ",\"event\":\"";
-
-        json +=
-            escapeJsonString(
-                record.eventName
-            );
-
-        json +=
-            "\"";
+        json += ",\"event\":\"";
+        json += escapeJsonString(record.eventName);
+        json += "\"";
     }
 
-    json +=
-        ",\"data\":";
-
-    if (
-        validJsonObject(
-            record.payloadJson.c_str()
-        )
-    )
-    {
-        json +=
-            record.payloadJson;
-    }
-    else
-    {
-        json +=
-            "{}";
-    }
-
-    json +=
-        "}";
+    json += ",\"data\":";
+    json += record.payloadJson;
+    json += "}";
 
     return json;
 }
@@ -416,32 +369,13 @@ SessionLogger::buildSessionStartPayload() const
 
     payload.reserve(192);
 
-    payload +=
-        "{\"boot_count\":";
-
-    payload +=
-        String(
-            _session.bootCount
-        );
-
-    payload +=
-        ",\"firmware\":\"";
-
-    payload +=
-        escapeJsonString(
-            _session.firmwareVersion
-        );
-
-    payload +=
-        "\",\"board\":\"";
-
-    payload +=
-        escapeJsonString(
-            _session.boardName
-        );
-
-    payload +=
-        "\"}";
+    payload += "{\"boot_count\":";
+    payload += String(_session.bootCount);
+    payload += ",\"firmware\":\"";
+    payload += escapeJsonString(_session.firmwareVersion);
+    payload += "\",\"board\":\"";
+    payload += escapeJsonString(_session.boardName);
+    payload += "\"}";
 
     return payload;
 }
@@ -505,11 +439,29 @@ bool SessionLogger::validJsonObject(
         return false;
     }
 
+    /*
+     * JSON Lines requires exactly one physical
+     * record per line. Payloads containing literal
+     * CR or LF characters must be rejected.
+     */
+    for (
+        const char* cursor = json;
+        *cursor != '\0';
+        ++cursor
+    )
+    {
+        if (
+            *cursor == '\n' ||
+            *cursor == '\r'
+        )
+        {
+            return false;
+        }
+    }
+
     while (
         *json == ' ' ||
-        *json == '\t' ||
-        *json == '\r' ||
-        *json == '\n'
+        *json == '\t'
     )
     {
         ++json;
@@ -528,9 +480,7 @@ bool SessionLogger::validJsonObject(
         end > json &&
         (
             end[-1] == ' ' ||
-            end[-1] == '\t' ||
-            end[-1] == '\r' ||
-            end[-1] == '\n'
+            end[-1] == '\t'
         )
     )
     {
@@ -555,6 +505,14 @@ StorageResult SessionLogger::makeResult(
     result.status = status;
 
     return result;
+}
+
+void SessionLogger::advanceSequence()
+{
+    if (_nextSequence < UINT32_MAX)
+    {
+        ++_nextSequence;
+    }
 }
 
 }

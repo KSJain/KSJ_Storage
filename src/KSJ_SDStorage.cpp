@@ -127,12 +127,19 @@ StorageResult SDStorage::writeText(
         );
     }
 
+    const size_t expectedBytes =
+        strlen(text);
+
     const size_t bytesWritten =
         file.print(text);
 
+    file.flush();
     file.close();
 
-    if (bytesWritten == 0)
+    if (
+        expectedBytes > 0 &&
+        bytesWritten != expectedBytes
+    )
     {
         return makeResult(
             false,
@@ -184,12 +191,19 @@ StorageResult SDStorage::appendText(
         );
     }
 
+    const size_t expectedBytes =
+        strlen(text);
+
     const size_t bytesWritten =
         file.print(text);
 
+    file.flush();
     file.close();
 
-    if (bytesWritten == 0)
+    if (
+        expectedBytes > 0 &&
+        bytesWritten != expectedBytes
+    )
     {
         return makeResult(
             false,
@@ -334,12 +348,6 @@ StorageResult SDStorage::visitDirectory(
             fileEntry.path =
                 entryName;
 
-            /*
-             * Some filesystem implementations
-             * return only the basename.
-             *
-             * Normalize it to an absolute path.
-             */
             if (
                 fileEntry.path.length() > 0 &&
                 fileEntry.path[0] != '/'
@@ -375,6 +383,157 @@ StorageResult SDStorage::visitDirectory(
     }
 
     directory.close();
+
+    return makeResult(
+        true,
+        StorageStatus::Ready
+    );
+}
+
+StorageResult SDStorage::fileSize(
+    const char* path,
+    uint64_t& sizeBytes
+)
+{
+    sizeBytes = 0;
+
+    if (!_ready)
+    {
+        return makeResult(
+            false,
+            StorageStatus::NotInitialized
+        );
+    }
+
+    if (!validatePath(path))
+    {
+        return makeResult(
+            false,
+            StorageStatus::ReadFailed
+        );
+    }
+
+    File file =
+        SD.open(
+            path,
+            FILE_READ
+        );
+
+    if (!file)
+    {
+        return makeResult(
+            false,
+            StorageStatus::OpenFailed
+        );
+    }
+
+    if (file.isDirectory())
+    {
+        file.close();
+
+        return makeResult(
+            false,
+            StorageStatus::ReadFailed
+        );
+    }
+
+    sizeBytes =
+        file.size();
+
+    file.close();
+
+    return makeResult(
+        true,
+        StorageStatus::Ready
+    );
+}
+
+StorageResult SDStorage::readLastByte(
+    const char* path,
+    char& value
+)
+{
+    value = '\0';
+
+    if (!_ready)
+    {
+        return makeResult(
+            false,
+            StorageStatus::NotInitialized
+        );
+    }
+
+    if (!validatePath(path))
+    {
+        return makeResult(
+            false,
+            StorageStatus::ReadFailed
+        );
+    }
+
+    File file =
+        SD.open(
+            path,
+            FILE_READ
+        );
+
+    if (!file)
+    {
+        return makeResult(
+            false,
+            StorageStatus::OpenFailed
+        );
+    }
+
+    if (
+        file.isDirectory() ||
+        file.size() == 0
+    )
+    {
+        file.close();
+
+        return makeResult(
+            false,
+            StorageStatus::ReadFailed
+        );
+    }
+
+    const size_t finalPosition =
+        file.size() - 1;
+
+    const bool seekSucceeded =
+        file.seek(
+            finalPosition,
+            SeekSet
+        );
+
+    if (!seekSucceeded)
+    {
+        file.close();
+
+        return makeResult(
+            false,
+            StorageStatus::ReadFailed
+        );
+    }
+
+    const int byteRead =
+        file.read();
+
+    file.close();
+
+    if (byteRead < 0)
+    {
+        return makeResult(
+            false,
+            StorageStatus::ReadFailed
+        );
+    }
+
+    value =
+        static_cast<char>(
+            byteRead
+        );
 
     return makeResult(
         true,
