@@ -1,9 +1,12 @@
 {
     "name": "KSJ_Storage",
     "version": "0.1.0",
-    "description": "Reusable text storage abstractions for Arduino-compatible embedded systems.",
+    "description": "Reusable storage abstractions and append-only session logging for Arduino-compatible embedded systems.",
     "keywords": [
         "storage",
+        "logging",
+        "json-lines",
+        "session",
         "sd",
         "sdhc",
         "filesystem",
@@ -27,8 +30,14 @@
         "espressif32"
     ],
     "headers": [
+        "IFileStorage.h",
+        "IStorageLogger.h",
         "ITextStorage.h",
         "KSJ_SDStorage.h",
+        "SessionInfo.h",
+        "SessionLogger.h",
+        "SessionRecord.h",
+        "SessionSequence.h",
         "StorageInfo.h",
         "StorageResult.h",
         "StorageStatus.h"

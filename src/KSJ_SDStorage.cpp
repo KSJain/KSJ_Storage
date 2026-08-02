@@ -113,10 +113,11 @@ StorageResult SDStorage::writeText(
         );
     }
 
-    File file = SD.open(
-        path,
-        FILE_WRITE
-    );
+    File file =
+        SD.open(
+            path,
+            FILE_WRITE
+        );
 
     if (!file)
     {
@@ -169,10 +170,11 @@ StorageResult SDStorage::appendText(
         );
     }
 
-    File file = SD.open(
-        path,
-        FILE_APPEND
-    );
+    File file =
+        SD.open(
+            path,
+            FILE_APPEND
+        );
 
     if (!file)
     {
@@ -224,10 +226,11 @@ StorageResult SDStorage::readText(
         );
     }
 
-    File file = SD.open(
-        path,
-        FILE_READ
-    );
+    File file =
+        SD.open(
+            path,
+            FILE_READ
+        );
 
     if (!file)
     {
@@ -246,6 +249,132 @@ StorageResult SDStorage::readText(
     }
 
     file.close();
+
+    return makeResult(
+        true,
+        StorageStatus::Ready
+    );
+}
+
+bool SDStorage::exists(
+    const char* path
+) const
+{
+    if (
+        !_ready ||
+        !validatePath(path)
+    )
+    {
+        return false;
+    }
+
+    return SD.exists(path);
+}
+
+StorageResult SDStorage::visitDirectory(
+    const char* directoryPath,
+    FileEntryVisitor visitor,
+    void* context
+)
+{
+    if (!_ready)
+    {
+        return makeResult(
+            false,
+            StorageStatus::NotInitialized
+        );
+    }
+
+    if (
+        directoryPath == nullptr ||
+        directoryPath[0] != '/' ||
+        visitor == nullptr
+    )
+    {
+        return makeResult(
+            false,
+            StorageStatus::ReadFailed
+        );
+    }
+
+    File directory =
+        SD.open(
+            directoryPath,
+            FILE_READ
+        );
+
+    if (
+        !directory ||
+        !directory.isDirectory()
+    )
+    {
+        if (directory)
+        {
+            directory.close();
+        }
+
+        return makeResult(
+            false,
+            StorageStatus::OpenFailed
+        );
+    }
+
+    File entry =
+        directory.openNextFile();
+
+    while (entry)
+    {
+        FileEntry fileEntry;
+
+        const char* entryName =
+            entry.name();
+
+        if (entryName != nullptr)
+        {
+            fileEntry.path =
+                entryName;
+
+            /*
+             * Some filesystem implementations
+             * return only the basename.
+             *
+             * Normalize it to an absolute path.
+             */
+            if (
+                fileEntry.path.length() > 0 &&
+                fileEntry.path[0] != '/'
+            )
+            {
+                fileEntry.path =
+                    "/" +
+                    fileEntry.path;
+            }
+        }
+
+        fileEntry.sizeBytes =
+            entry.size();
+
+        fileEntry.isDirectory =
+            entry.isDirectory();
+
+        const bool continueVisiting =
+            visitor(
+                fileEntry,
+                context
+            );
+
+        entry.close();
+
+        if (!continueVisiting)
+        {
+            break;
+        }
+
+        entry =
+            directory.openNextFile();
+    }
+
+    directory.close();
 
     return makeResult(
         true,
@@ -272,8 +401,11 @@ StorageResult SDStorage::makeResult(
 
     StorageResult result;
 
-    result.success = success;
-    result.status = status;
+    result.success =
+        success;
+
+    result.status =
+        status;
 
     return result;
 }

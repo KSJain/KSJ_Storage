@@ -4,6 +4,7 @@
 #include "KSJ_SDStorage.h"
 #include "SessionInfo.h"
 #include "SessionLogger.h"
+#include "SessionSequence.h"
 
 namespace Pins
 {
@@ -22,14 +23,18 @@ namespace Pins
 
 namespace Example
 {
+    constexpr char SESSION_PREFIX[] =
+        "EXAMPLE-";
+
     constexpr char FIRMWARE[] =
         "KSJ_Storage-example-0.2.0";
 
     constexpr char BOARD[] =
         "ESP32 DOIT DevKit V1";
 
-    constexpr uint32_t TELEMETRY_INTERVAL_MS =
-        5000;
+    constexpr uint32_t
+        TELEMETRY_INTERVAL_MS =
+            5000;
 }
 
 SPIClass sdSpi(
@@ -44,6 +49,11 @@ KSJ::SDStorage storage(
 KSJ::SessionLogger logger(
     storage
 );
+
+KSJ::SessionSequence
+    sessionSequence(
+        storage
+    );
 
 uint32_t previousTelemetryMs =
     0;
@@ -68,10 +78,16 @@ void printResult(
 
 void setup()
 {
-    Serial.begin(115200);
-    delay(400);
+    Serial.begin(
+        115200
+    );
+
+    delay(
+        400
+    );
 
     Serial.println();
+
     Serial.println(
         "KSJ Storage Session Logger"
     );
@@ -101,19 +117,35 @@ void setup()
         return;
     }
 
-    /*
-     * This readable identifier is temporary.
-     *
-     * Prototype Box will later generate it from
-     * its persistent boot count.
-     */
+    uint32_t sessionNumber = 0;
+
+    String sessionId;
+
+    const KSJ::StorageResult
+        sequenceResult =
+            sessionSequence.findNext(
+                Example::SESSION_PREFIX,
+                sessionNumber,
+                sessionId
+            );
+
+    printResult(
+        "Session sequence",
+        sequenceResult
+    );
+
+    if (!sequenceResult)
+    {
+        return;
+    }
+
     KSJ::SessionInfo session;
 
     session.sessionId =
-        "EXAMPLE-000001";
+        sessionId;
 
     session.bootCount =
-        1;
+        sessionNumber;
 
     session.firmwareVersion =
         Example::FIRMWARE;
@@ -139,6 +171,22 @@ void setup()
     {
         return;
     }
+
+    Serial.print(
+        "Session number: "
+    );
+
+    Serial.println(
+        sessionNumber
+    );
+
+    Serial.print(
+        "Session ID: "
+    );
+
+    Serial.println(
+        sessionId
+    );
 
     Serial.print(
         "Session file: "
@@ -183,7 +231,9 @@ void loop()
 
     String payload;
 
-    payload.reserve(96);
+    payload.reserve(
+        96
+    );
 
     payload +=
         "{\"simulated_raw\":";

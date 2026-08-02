@@ -5,6 +5,7 @@
 #include <SD.h>
 #include <SPI.h>
 
+#include "IFileStorage.h"
 #include "ITextStorage.h"
 #include "StorageInfo.h"
 #include "StorageResult.h"
@@ -14,7 +15,8 @@ namespace KSJ
 {
 
 class SDStorage final
-    : public ITextStorage
+    : public ITextStorage,
+      public IFileStorage
 {
 public:
     SDStorage(
@@ -44,6 +46,16 @@ public:
     StorageResult readText(
         const char* path,
         String& destination
+    ) override;
+
+    bool exists(
+        const char* path
+    ) const override;
+
+    StorageResult visitDirectory(
+        const char* directoryPath,
+        FileEntryVisitor visitor,
+        void* context = nullptr
     ) override;
 
     uint8_t chipSelectPin() const;
