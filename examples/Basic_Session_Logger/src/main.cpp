@@ -378,7 +378,7 @@ void setup()
 
     KSJ::RetentionPolicy policy;
 
-    policy.maximumSessions = 5;
+    policy.maximumSessions = 100;
 
     policy.maximumSessionBytes =
         2ULL * 1024ULL * 1024ULL;
